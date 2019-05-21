@@ -9,9 +9,11 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@slack/bolt": "^1.0.1"
+    "@slack/bolt": "^1.0.1",
+    "faker": "^4.1.0"
   },
   "devDependencies": {
+    "@types/faker": "^4.1.5",
     "tslint": "^5.16.0",
     "typescript": "^3.4.5"
   }
