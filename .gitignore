@@ -92,3 +92,7 @@ dist/
 
 #VS Code
 .vscode/
+
+#Google Cloud deployment
+.gcloudignore
+app.yaml
