@@ -1,9 +1,7 @@
-import { App, directMention } from '@slack/bolt';
-import { RespondArguments, Middleware, BlockButtonAction, BlockElementAction } from '@slack/bolt/dist/types'
-import { SectionBlock } from '@slack/types';
+import { App } from '@slack/bolt';
+import { BlockButtonAction, ButtonAction } from '@slack/bolt/dist/types'
 import { PollSession } from './models/PollSession';
 import { PollSessionFactory, MockPollSessionFactory } from './helpers/PollSessionFactory';
-import { response } from 'express';
 
 const sessions : Map<string, PollSession> = new Map<string, PollSession>();
 
@@ -19,16 +17,16 @@ const app = new App(
     }
 );
 
-app.event("app_mention", async ({payload, event, message, body, say}) => {
+app.event("app_mention", async ({payload, body}) => {
     const id : string = body.team_id + payload.channel;  
-    const session : PollSession = sessionFactory.build(id, "The wheel has been spun!");   
+    const session : PollSession = sessionFactory.build(id, "The wheel has been spun!\n*Where should we go for lunch?*");   
 
     // Response types aren't strongly typed
     const messageResult: any = await app.client.chat.postMessage(
         {
             "token": process.env.LUNCH_BOT_TOKEN,
             "channel": payload.channel,
-            "text": "The wheel has been spun!",
+            "text": "This text does not matter :/",
             "as_user": true,
             "blocks": session.render()
         }
@@ -39,56 +37,44 @@ app.event("app_mention", async ({payload, event, message, body, say}) => {
     }
 });
 
-// app.action("vote_button", async ({ack, action, payload, respond, body, say, context}) => {
-//     ack();
-//     // let button: BlockButtonAction = body as BlockButtonAction
-//     action;
-//     payload;
-//     context;
-//     body;
+app.action("vote_button", async ({ack, action, body}) => {
+    ack();
 
-//     const messageResult: any = await app.client.users.profile.get({
-//         "token": process.env.LUNCH_USER_TOKEN,
-//         "user": body.user.id  
-//     })
+    const button: BlockButtonAction = body as BlockButtonAction;
+    const buttonAction: ButtonAction = action as ButtonAction;
 
-//     if (messageResult.ok) {
+    const session = sessions.get(button.message.ts);
 
-//     }
+    const profileResult: any = await app.client.users.profile.get({
+        "token": process.env.LUNCH_USER_TOKEN,
+        "user": body.user.id  
+    });
 
-    // let wheel: RespondArguments = sessions.get(body.team.id + body.channel.id);
-    // wheel.blocks[0] =  
-    //     {
-    //         "type": "section",
-    //         "text": {
-    //             "type": "mrkdwn",
-    //             "text": "The poll has been updated!"
-    //         }
-    //     }
-    // wheel.replace_original = true;
-    // await app.client.chat.update(
-    //     {
-    //         "token": process.env.LUNCH_BOT_TOKEN,
-    //         "channel": button.channel.id, 
-    //         "text": wheel.text,
-    //         "ts": button.message.ts,          
-    //         "as_user": true,                         
-    //         "blocks": wheel.blocks
-    //     }
-    // )
-// });
+    if (profileResult.ok) {
+        const profile = profileResult.profile;
+        const option = session.getOption(buttonAction.block_id);
+
+        option.addVote(profile.display_name, profile.image_24);
+
+        app.client.chat.update(
+            {
+                "token": process.env.LUNCH_BOT_TOKEN,
+                "channel": button.channel.id, 
+                "text": 'This text does not matter',
+                "ts": button.message.ts,          
+                "as_user": true,                         
+                "blocks": session.render()
+            }
+        );
+    }
+});
 
 app.error((error) => {
     console.error(error);
 });
 
 (async () => {
-    // Start your app
-    try{
-        await app.start(process.env.PORT || 3000);
-    }
-    catch (ex) {
-        console.error(ex);
-    }
+    // Start your app 
+    await app.start(process.env.PORT || 3000);
     console.log('⚡️ Bolt app is running!');
 })();

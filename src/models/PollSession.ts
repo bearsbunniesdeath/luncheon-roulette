@@ -1,4 +1,4 @@
-import { RespondArguments } from "@slack/bolt";
+import { RespondArguments, onlyOptions } from "@slack/bolt";
 import { SectionBlock, DividerBlock, Block, ContextBlock } from "@slack/types";
 import { PollOption } from "./PollOption";
 
@@ -11,6 +11,10 @@ export class PollSession {
 
     constructor(id: string) {
         this.id = id;
+    }
+
+    getOption(name: string) : PollOption {
+        return this.options.find(o => o.name === name);
     }
 
     render(): Array<Block> {   
@@ -69,32 +73,44 @@ export class PollSession {
             }
         }
 
-        const votesBlock : ContextBlock = {
-            "type": "context",
-            "elements": [
-                {
-                    "type": "image",
-                    "image_url": "https://api.slack.com/img/blocks/bkb_template_images/profile_1.png",
-                    "alt_text": "Michael Scott"
-                },
-                {
-                    "type": "image",
-                    "image_url": "https://api.slack.com/img/blocks/bkb_template_images/profile_2.png",
-                    "alt_text": "Dwight Schrute"
-                },
-                {
-                    "type": "image",
-                    "image_url": "https://api.slack.com/img/blocks/bkb_template_images/profile_3.png",
-                    "alt_text": "Pam Beasely"
-                },
-                {
-                    "type": "plain_text",
-                    "emoji": true,
-                    "text": "3 votes"
-                }
-            ]
+        if (option.votes.length > 0) {
+            const votesBlock : ContextBlock = {
+                type: "context",
+                elements: []
+            }
+
+            option.votes.forEach((vote) => {
+                votesBlock.elements.push({
+                    type: 'image',
+                    image_url: vote.image,
+                    alt_text: vote.name
+                })
+            });
+
+            return [restaurantBlock, votesBlock];
         }
 
-        return [restaurantBlock, votesBlock];
+        return [restaurantBlock];    
+
+        // {
+        //     "type": "image",
+        //     "image_url": "https://api.slack.com/img/blocks/bkb_template_images/profile_1.png",
+        //     "alt_text": "Michael Scott"
+        // },
+        // {
+        //     "type": "image",
+        //     "image_url": "https://api.slack.com/img/blocks/bkb_template_images/profile_2.png",
+        //     "alt_text": "Dwight Schrute"
+        // },
+        // {
+        //     "type": "image",
+        //     "image_url": "https://api.slack.com/img/blocks/bkb_template_images/profile_3.png",
+        //     "alt_text": "Pam Beasely"
+        // },
+        // {
+        //     "type": "plain_text",
+        //     "emoji": true,
+        //     "text": "3 votes"
+        // }
     }
 }
