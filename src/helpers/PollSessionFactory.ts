@@ -1,11 +1,13 @@
 import { PollSession } from "../models/PollSession";
 import * as faker from "faker";
 import { PollOption } from "../models/PollOption";
+import { GoogleMapsClient } from "@google/maps";
+import { PollOptionFactory } from "./PollOptionFactory";
 
 
 export class MockPollSessionFactory implements PollSessionFactory {
 
-    build(id: string, message: string, numberOfOptions: number = 3) : PollSession {
+    build(id: string, message: string, numberOfOptions: number = 3) : Promise<PollSession> {
         const session: PollSession = new PollSession(id);
         session.message = message;    
 
@@ -17,13 +19,33 @@ export class MockPollSessionFactory implements PollSessionFactory {
             session.options.push(option); 
         }
 
-        return session;
+        return new Promise(() => session);
     }
 
 }
 
+export class LivePollSessionFactory implements PollSessionFactory {
+    
+    private optionFactory: PollOptionFactory;
+
+    constructor(optionsFactory: PollOptionFactory) {
+        this.optionFactory = optionsFactory;
+    }
+    
+    async build(id: string, message: string, numberOfOptions: number = 3) : Promise<PollSession> {
+        const session: PollSession = new PollSession(id);
+        session.message = message;    
+
+        const options = await this.optionFactory.build(numberOfOptions);
+
+        session.options.push(...options);
+
+        return session;
+    }
+}
+
 export interface PollSessionFactory {
 
-    build(id: string, message: string, numberOfOptions?: number) : PollSession
+    build(id: string, message: string, numberOfOptions?: number) : Promise<PollSession>
 
 }

@@ -1,12 +1,20 @@
 import { App } from '@slack/bolt';
 import { BlockButtonAction, ButtonAction } from '@slack/bolt/dist/types'
 import { PollSession } from './models/PollSession';
-import { PollSessionFactory, MockPollSessionFactory } from './helpers/PollSessionFactory';
+import { PollSessionFactory, MockPollSessionFactory, LivePollSessionFactory } from './helpers/PollSessionFactory';
+
+import { createClient } from '@google/maps'
+import { LivePollOptionFactory } from './helpers/PollOptionFactory';
+
+const mapClient = createClient({
+    key: process.env.MAPS_API_KEY,
+    Promise: Promise
+})
 
 const sessions : Map<string, PollSession> = new Map<string, PollSession>();
 
 //TODO: Use DI
-const sessionFactory : PollSessionFactory = new MockPollSessionFactory();
+const sessionFactory : PollSessionFactory = new LivePollSessionFactory(new LivePollOptionFactory(mapClient));
 
 const app = new App(
     {
@@ -19,7 +27,7 @@ const app = new App(
 
 app.event("app_mention", async ({payload, body}) => {
     const id : string = body.team_id + payload.channel;  
-    const session : PollSession = sessionFactory.build(id, "The wheel has been spun!\n*Where should we go for lunch?*");   
+    const session : PollSession = await sessionFactory.build(id, "The wheel has been spun!\n*Where should we go for lunch?*");   
 
     // Response types aren't strongly typed
     const messageResult: any = await app.client.chat.postMessage(
