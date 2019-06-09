@@ -1,4 +1,4 @@
-import { App, AuthorizeResult } from '@slack/bolt';
+import { App, AuthorizeResult, ExpressReceiver } from '@slack/bolt';
 import { BlockButtonAction, ButtonAction } from '@slack/bolt/dist/types'
 import { PollSession } from './models/PollSession';
 import { PollSessionFactory, MockPollSessionFactory, LivePollSessionFactory } from './helpers/PollSessionFactory';
@@ -21,28 +21,29 @@ const sessions : Map<string, PollSession> = new Map<string, PollSession>();
 //TODO: Use DI
 const sessionFactory : PollSessionFactory = new LivePollSessionFactory(new LivePollOptionFactory(mapClient));
 
-const authorizeFn = async({teamId}) : Promise<AuthorizeResult> => {
-    const teams = await db.collection('slackauth').get();
+const expressReceiver = new ExpressReceiver({
+    signingSecret: process.env.LUNCHEON_ROULETTE_SIGNING_SECRET
+});
 
-    for (let i = 0; i < teams.size; i++) {
-        const teamData = teams.docs[0].data();
-        if (teamData.teamId = teamId) {
-            return {
-                botId: teamData.botId,
-                botUserId: teamData.botUserId,
-                botToken: teamData.botToken,
-                userToken: teamData.userToken
-            } as AuthorizeResult
-        }
-    };
-    
-    throw new Error('No matching authorization');
+const expressApp = expressReceiver.app;
+
+const authorizeFn = async({teamId}) : Promise<AuthorizeResult> => {
+    const team = await db.collection('slackauth').where('teamId', '==', teamId).limit(1).get();
+
+    const teamData = team.docs[0].data();
+
+    return {
+            botId: 'thisneedstobesomethingsoitshappy',
+            botUserId: teamData.botUserId,
+            botToken: teamData.botToken,
+            userToken: teamData.userToken
+    } as AuthorizeResult
 }
 
 const app = new App(
     {
         authorize: authorizeFn,
-        signingSecret: process.env.LUNCHEON_ROULETTE_SIGNING_SECRET
+        receiver: expressReceiver
     }
 );
 
@@ -101,6 +102,45 @@ app.action("vote_button", async ({ack, action, body, context}) => {
 app.error((error) => {
     console.error(error);
 });
+
+// OAuth workflow to install the app //////////////////////////
+
+expressApp.get('/', (req, res) => {
+    res.send('<h1>Luncheon Roulette</h1><a href="https://slack.com/oauth/authorize?scope=bot&client_id=76198394647.628689207987"><img alt=""Add to Slack"" height="40" width="139" src="https://platform.slack-edge.com/img/add_to_slack.png" srcset="https://platform.slack-edge.com/img/add_to_slack.png 1x, https://platform.slack-edge.com/img/add_to_slack@2x.png 2x" /></a>');
+});
+
+expressApp.get('/slack/auth/result', (req, res) => {
+    if (req.query.success === 'true') {
+        res.send('<h1>Success! Thanks you for installing Luncheon Roulette!</h1>');
+    } else {
+        res.send('<h1>Failure! Something when wrong when trying to install Luncheon Roulette!</h1>');
+    }
+});
+
+expressApp.get('/slack/auth/redirect', async (req, res) => {
+    try {
+        const result = await app.client.oauth.access({
+            code: req.query.code,
+            client_id: process.env.LUNCHEON_ROULETTE_CLIENT_ID,
+            client_secret: process.env.LUNCHEON_ROULETTE_CLIENT_SECRET
+        });
+    
+        if (result.ok) {
+            await db.collection('slackauth').add({
+                teamId: result.team_id,
+                botUserId: (result as any).bot.bot_user_id,
+                botToken: (result as any).bot.bot_access_token,
+                userToken: result.access_token
+            });
+    
+            return res.redirect('/slack/auth/result?&success=true');
+        }
+    } catch (error) {
+        res.redirect('/slack/auth/result?&success=false');
+    }
+});
+
+///////////////////////////////////////////////////////////////
 
 (async () => {
     // Start your app 
