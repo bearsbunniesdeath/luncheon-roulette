@@ -7,8 +7,8 @@ import { PollOptionFactory } from "./PollOptionFactory";
 
 export class MockPollSessionFactory implements PollSessionFactory {
 
-    build(id: string, message: string, numberOfOptions: number = 3) : Promise<PollSession> {
-        const session: PollSession = new PollSession(id);
+    build(message: string, numberOfOptions: number = 3) : Promise<PollSession> {
+        const session: PollSession = new PollSession();
         session.message = message;    
 
         for (let index = 0; index < numberOfOptions; index++) {
@@ -32,8 +32,8 @@ export class LivePollSessionFactory implements PollSessionFactory {
         this.optionFactory = optionsFactory;
     }
     
-    async build(id: string, message: string, numberOfOptions: number = 3) : Promise<PollSession> {
-        const session: PollSession = new PollSession(id);
+    async build(message: string, numberOfOptions: number = 3) : Promise<PollSession> {
+        const session: PollSession = new PollSession();
         session.message = message;    
 
         const options = await this.optionFactory.build(numberOfOptions);
@@ -46,6 +46,6 @@ export class LivePollSessionFactory implements PollSessionFactory {
 
 export interface PollSessionFactory {
 
-    build(id: string, message: string, numberOfOptions?: number) : Promise<PollSession>
+    build(message: string, numberOfOptions?: number) : Promise<PollSession>
 
 }

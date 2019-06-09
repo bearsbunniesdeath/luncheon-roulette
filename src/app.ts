@@ -1,3 +1,5 @@
+import "reflect-metadata";
+
 import { App, AuthorizeResult, ExpressReceiver } from '@slack/bolt';
 import { BlockButtonAction, ButtonAction } from '@slack/bolt/dist/types'
 import { PollSession } from './models/PollSession';
@@ -7,6 +9,8 @@ import { LivePollOptionFactory } from './helpers/PollOptionFactory';
 import { Firestore } from '@google-cloud/firestore';
 import { createClient } from '@google/maps'
 
+import { classToPlain, plainToClass } from 'class-transformer';
+
 const db = new Firestore({
     projectId: 'luncheon-roulette'
 });
@@ -14,9 +18,7 @@ const db = new Firestore({
 const mapClient = createClient({
     key: process.env.MAPS_API_KEY,
     Promise: Promise
-})
-
-const sessions : Map<string, PollSession> = new Map<string, PollSession>();
+});
 
 //TODO: Use DI
 const sessionFactory : PollSessionFactory = new LivePollSessionFactory(new LivePollOptionFactory(mapClient));
@@ -47,10 +49,9 @@ const app = new App(
     }
 );
 
-app.event("app_mention", async ({payload, body, context}) => {
-    const id : string = body.team_id + payload.channel;  
-    const session : PollSession = await sessionFactory.build(id, "The wheel has been spun!\n*Where should we go for lunch?*");   
-    context;
+app.event("app_mention", async ({payload, context}) => {  
+    const session : PollSession = await sessionFactory.build("The wheel has been spun!\n*Where should we go for lunch?*");   
+    
     // Response types aren't strongly typed
     const messageResult: any = await app.client.chat.postMessage(
         {
@@ -63,7 +64,8 @@ app.event("app_mention", async ({payload, body, context}) => {
     );
 
     if (messageResult.ok){
-        sessions.set(messageResult.ts, session);
+        const docRef = db.collection('pollsessions').doc(messageResult.ts);
+        docRef.set(classToPlain(session));
     }
 });
 
@@ -73,19 +75,42 @@ app.action("vote_button", async ({ack, action, body, context}) => {
     const button: BlockButtonAction = body as BlockButtonAction;
     const buttonAction: ButtonAction = action as ButtonAction;
 
-    const session = sessions.get(button.message.ts);
+    //const session = sessions.get(button.message.ts);
+    const sessionRef = db.collection('pollsessions').doc(button.message.ts);
 
-    const profileResult: any = await app.client.users.profile.get({
-        token: context.userToken,
-        user: body.user.id  
+    const pollsession = await db.runTransaction(async t => {
+        // Make sure not to change app state in this method!!!
+        // Return info that you need instead
+        // Otherwise there will be concurrency issues
+
+        const doc = await t.get(sessionRef);
+
+        if (!doc.exists) {
+            return;
+        }
+
+        const session: PollSession = plainToClass(PollSession, doc.data());
+        
+        const profileResult: any = await app.client.users.profile.get({
+            token: context.userToken,
+            user: body.user.id  
+        });
+
+        if (profileResult.ok) {
+            const profile = profileResult.profile;
+            const option = session.getOption(buttonAction.block_id);
+
+            option.addVote(profile.display_name, profile.image_24);
+
+            t.update(sessionRef, classToPlain(session));
+
+            return session;
+        }
     });
 
-    if (profileResult.ok) {
-        const profile = profileResult.profile;
-        const option = session.getOption(buttonAction.block_id);
-
-        option.addVote(profile.display_name, profile.image_24);
-
+    // This is the only part of the code that prevents me from being able
+    // to run multiple servers because of a race condition
+    if (pollsession) {
         app.client.chat.update(
             {
                 token: context.botToken,
@@ -93,10 +118,11 @@ app.action("vote_button", async ({ack, action, body, context}) => {
                 text: 'This text does not matter',
                 ts: button.message.ts,          
                 as_user: true,                         
-                blocks: session.render()
+                blocks: pollsession.render()
             }
         );
     }
+
 });
 
 app.error((error) => {

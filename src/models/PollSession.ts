@@ -1,17 +1,14 @@
 import { RespondArguments, onlyOptions } from "@slack/bolt";
 import { SectionBlock, DividerBlock, Block, ContextBlock } from "@slack/types";
 import { PollOption } from "./PollOption";
+import { Type } from "class-transformer";
 
 export class PollSession {
 
-    readonly id: string;
-
     message : string;
-    options: Array<PollOption> = new Array<PollOption>();
 
-    constructor(id: string) {
-        this.id = id;
-    }
+    @Type(() => PollOption)
+    options: Array<PollOption> = new Array<PollOption>();
 
     getOption(name: string) : PollOption {
         return this.options.find(o => o.name === name);
