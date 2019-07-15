@@ -57,7 +57,7 @@ app.event("app_mention", async ({payload, context}) => {
         {
             token: context.botToken,
             channel: payload.channel,
-            text: "This text does not matter :/",
+            text: "The wheel has been spun!",
             as_user: true,
             blocks: session.render()
         }
