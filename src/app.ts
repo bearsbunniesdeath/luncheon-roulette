@@ -49,7 +49,16 @@ const app = new App(
     }
 );
 
+let handlingTs = new Set<string>();
+
 app.event("app_mention", async ({payload, context}) => {  
+    // Prevent handling an event more than once
+    if (handlingTs.has(payload.event_ts)) {
+        return;
+    }
+
+    handlingTs.add(payload.event_ts);
+
     const session : PollSession = await sessionFactory.build("The wheel has been spun!\n*Where should we go for lunch?*");   
     
     // Response types aren't strongly typed
@@ -66,6 +75,8 @@ app.event("app_mention", async ({payload, context}) => {
     if (messageResult.ok){
         const docRef = db.collection('pollsessions').doc(messageResult.ts);
         docRef.set(classToPlain(session));
+
+        handlingTs.delete(payload.event_ts);
     }
 });
 
