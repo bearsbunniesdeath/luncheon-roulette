@@ -110,8 +110,11 @@ app.action("vote_button", async ({ack, action, body, context}) => {
         if (profileResult.ok) {
             const profile = profileResult.profile;
             const option = session.getOption(buttonAction.block_id);
+    
+            // For some reason not all users have display names
+            const voterName = profile.display_name ? profile.display_name : profile.real_name
 
-            option.addVote(profile.display_name, profile.image_24);
+            option.addVote(voterName, profile.image_24);
 
             t.update(sessionRef, classToPlain(session));
 
