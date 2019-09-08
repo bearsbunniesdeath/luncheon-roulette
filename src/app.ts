@@ -59,7 +59,7 @@ app.event("app_mention", async ({payload, context}) => {
 
     handlingTs.add(payload.event_ts);
 
-    const session : PollSession = await sessionFactory.build("The wheel has been spun!\n*Where should we go for lunch?*");   
+    const session : PollSession = await sessionFactory.build("The wheel has been spun!\n*Where should we go for lunch?*", 4);   
     
     // Response types aren't strongly typed
     const messageResult: any = await app.client.chat.postMessage(
