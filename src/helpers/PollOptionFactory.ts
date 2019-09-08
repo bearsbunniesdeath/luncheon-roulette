@@ -14,6 +14,7 @@ export class LivePollOptionFactory implements PollOptionFactory {
         try {
             const placesResponse = await this.placesProvider.places({
                 query: undefined,
+                opennow: true,
                 location: [51.083986, -114.130609],  //VMG office,
                 radius: 3000,
                 type: 'restaurant'
