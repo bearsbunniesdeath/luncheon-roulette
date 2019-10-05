@@ -1,7 +1,7 @@
 import "reflect-metadata";
 
 import { App, AuthorizeResult, ExpressReceiver } from '@slack/bolt';
-import { BlockButtonAction, ButtonAction } from '@slack/bolt/dist/types'
+import { BlockButtonAction, ButtonAction, AppMentionEvent, Context } from '@slack/bolt/dist/types'
 import { PollSession } from './models/PollSession';
 import { PollSessionFactory, MockPollSessionFactory, LivePollSessionFactory } from './helpers/PollSessionFactory';
 import { LivePollOptionFactory } from './helpers/PollOptionFactory';
@@ -10,6 +10,10 @@ import { Firestore } from '@google-cloud/firestore';
 import { createClient } from '@google/maps'
 
 import { classToPlain, plainToClass } from 'class-transformer';
+
+import stringArgv from 'string-argv';
+import commandLineArgs = require('command-line-args');
+import { KnownBlock, Block } from "@slack/types";
 
 const db = new Firestore({
     projectId: 'luncheon-roulette'
@@ -59,25 +63,33 @@ app.event("app_mention", async ({payload, context}) => {
 
     handlingTs.add(payload.event_ts);
 
-    const session : PollSession = await sessionFactory.build("The wheel has been spun!\n*Where should we go for lunch?*", 4);   
-    
-    // Response types aren't strongly typed
-    const messageResult: any = await app.client.chat.postMessage(
-        {
-            token: context.botToken,
-            channel: payload.channel,
-            text: "The wheel has been spun!",
-            as_user: true,
-            blocks: session.render()
-        }
-    );
+    // Parse the verb first
+    const text: string = payload.text.split(`<@${context.botUserId}>`).join('');
+    let argv: string[] = stringArgv(text);
+    const mainDefinitions: commandLineArgs.OptionDefinition[] = [
+        {name: 'command', defaultOption: true}
+    ];
 
-    if (messageResult.ok){
-        const docRef = db.collection('pollsessions').doc(messageResult.ts);
-        docRef.set(classToPlain(session));
+    const mainOptions: commandLineArgs.CommandLineOptions = commandLineArgs(mainDefinitions, {argv, stopAtFirstUnknown: true});
+    argv = mainOptions._unknown || [];
 
-        handlingTs.delete(payload.event_ts);
+    if (!mainOptions.command) {
+        postMessage('Beep boop, lunch bot is online!', payload, context);
+        return;
     }
+
+    const verbDefinitions = optionMap.get(mainOptions.command);
+
+    if (verbDefinitions === undefined) {
+        postMessage(`Unknown command ${mainOptions.command}`, payload, context);
+        return;
+    }
+
+    //Parse the verb action
+    const verbOptions = commandLineArgs(verbDefinitions, { argv });
+    const verbAction = actionMap.get(mainOptions.command);
+
+    await verbAction(verbOptions, payload, context);
 });
 
 app.action("vote_button", async ({ack, action, body, context}) => {
@@ -142,6 +154,47 @@ app.action("vote_button", async ({ack, action, body, context}) => {
 app.error((error) => {
     console.error(error);
 });
+
+async function postMessage(message: string, payload: AppMentionEvent, context: Context, blocks?: (KnownBlock | Block)[]): Promise<any> {
+    const messageResult: any = await app.client.chat.postMessage(
+        {
+            token: context.botToken,
+            channel: payload.channel,
+            text: message,
+            as_user: true,
+            blocks: blocks
+        }
+    );
+
+    return messageResult;
+}
+
+const optionMap: Map<string, commandLineArgs.OptionDefinition[]> = new Map([
+    ['spin', []],
+    ['add', [{name: 'location', defaultOption: true}]]
+]);
+
+const actionMap: Map<string, (args: commandLineArgs.CommandLineOptions, payload: AppMentionEvent, context: Context) => Promise<void>> = new Map([
+    ['spin', handleSpin],
+    ['add', handleAdd]
+]);
+
+async function handleSpin(args: commandLineArgs.CommandLineOptions, payload: AppMentionEvent, context: Context) {
+    const session : PollSession = await sessionFactory.build("The wheel has been spun!\n*Where should we go for lunch?*", 4);   
+    
+    const messageResult: any = await postMessage('The wheel has been spun!', payload, context, session.render());  
+
+    if (messageResult.ok){
+        const docRef = db.collection('pollsessions').doc(messageResult.ts);
+        docRef.set(classToPlain(session));
+
+        handlingTs.delete(payload.event_ts);
+    }
+}
+
+async function handleAdd(args: commandLineArgs.CommandLineOptions, payload: AppMentionEvent, context: Context) {
+    postMessage('Add command was called!', payload, context);
+}
 
 // OAuth workflow to install the app //////////////////////////
 
