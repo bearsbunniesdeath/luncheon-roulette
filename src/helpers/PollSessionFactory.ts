@@ -12,10 +12,11 @@ export class MockPollSessionFactory implements PollSessionFactory {
         session.message = message;    
 
         for (let index = 0; index < numberOfOptions; index++) {
+            const optionplaceId = faker.random.uuid();
             const optionName = faker.company.companyName();
             const optionDesc = faker.company.bs();
 
-            const option = new PollOption(optionName, optionDesc);
+            const option = new PollOption(optionplaceId, optionName, optionDesc);
             session.options.push(option); 
         }
 

@@ -74,14 +74,14 @@ app.event("app_mention", async ({payload, context}) => {
     argv = mainOptions._unknown || [];
 
     if (!mainOptions.command) {
-        postMessage('Beep boop, lunch bot is online!', payload, context);
+        postMessage('Beep boop, lunch bot is online!', payload.channel, context);
         return;
     }
 
     const verbDefinitions = optionMap.get(mainOptions.command);
 
     if (verbDefinitions === undefined) {
-        postMessage(`Unknown command ${mainOptions.command}`, payload, context);
+        postMessage(`Unknown command ${mainOptions.command}`, payload.channel, context);
         return;
     }
 
@@ -151,15 +151,68 @@ app.action("vote_button", async ({ack, action, body, context}) => {
 
 });
 
+app.action("add_button", async ({ack, respond, action, body, context}) => {
+    ack();   
+    const button: BlockButtonAction = body as BlockButtonAction;
+    const buttonAction: ButtonAction = action as ButtonAction;
+   
+    const settingsRef = await db.collection('settings').doc(body.team.id);
+
+    const placeToAdd = await db.runTransaction(async t => {   
+        const settings = await t.get(settingsRef);
+
+        if (!settings.exists) {
+            return;
+        }
+
+        const settingsData = settings.data();
+
+        settingsData.placesPool.push(buttonAction.value);
+
+        t.update(settingsRef, settingsData); 
+        
+        return buttonAction.value
+    });
+
+    if (placeToAdd) {
+        //Hacky way to delete the ephemeral message
+        respond({
+            text: undefined,
+            delete_original: true        
+        });
+        
+        //Post the added place to everybody
+        const place = await mapClient.place({
+            placeid: placeToAdd
+        }).asPromise(); 
+        postMessage(`Added ${place.json.result.name} to the pool.`, button.channel.id, context);        
+    }
+});
+
 app.error((error) => {
     console.error(error);
 });
 
-async function postMessage(message: string, payload: AppMentionEvent, context: Context, blocks?: (KnownBlock | Block)[]): Promise<any> {
+async function postMessage(message: string, channel: string, context: Context, blocks?: (KnownBlock | Block)[]): Promise<any> {
     const messageResult: any = await app.client.chat.postMessage(
         {
             token: context.botToken,
-            channel: payload.channel,
+            channel,
+            text: message,
+            as_user: true,
+            blocks: blocks
+        }
+    );
+
+    return messageResult;
+}
+
+async function postEphemeral(user: string, message: string, channel: string, context: Context, blocks?: (KnownBlock | Block)[]): Promise<any> {
+    const messageResult: any = await app.client.chat.postEphemeral(
+        {
+            user: user,
+            token: context.botToken,
+            channel,
             text: message,
             as_user: true,
             blocks: blocks
@@ -182,7 +235,7 @@ const actionMap: Map<string, (args: commandLineArgs.CommandLineOptions, payload:
 async function handleSpin(args: commandLineArgs.CommandLineOptions, payload: AppMentionEvent, context: Context) {
     const session : PollSession = await sessionFactory.build("The wheel has been spun!\n*Where should we go for lunch?*", 4);   
     
-    const messageResult: any = await postMessage('The wheel has been spun!', payload, context, session.render());  
+    const messageResult: any = await postMessage('The wheel has been spun!', payload.channel, context, session.render());  
 
     if (messageResult.ok){
         const docRef = db.collection('pollsessions').doc(messageResult.ts);
@@ -193,7 +246,14 @@ async function handleSpin(args: commandLineArgs.CommandLineOptions, payload: App
 }
 
 async function handleAdd(args: commandLineArgs.CommandLineOptions, payload: AppMentionEvent, context: Context) {
-    postMessage('Add command was called!', payload, context);
+    const optionFactory = new LivePollOptionFactory(mapClient);
+    const options = await optionFactory.buildFromQuery(args.location, 3);
+
+    const blocks: Block[] = [].concat.apply([], options.map(o => {
+        return o.renderAdd()
+    }));
+
+    postEphemeral(payload.user, 'Select a location to add', payload.channel, context, blocks);
 }
 
 // OAuth workflow to install the app //////////////////////////
