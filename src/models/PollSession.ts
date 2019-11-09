@@ -17,97 +17,37 @@ export class PollSession {
     render(): Array<Block> {   
         const blocks : Array<Block> = [];
 
-        blocks.push(this.buildMessageBlock());
-        blocks.push(this.buildDividerBlock());
-        blocks.push(...this.buildOptionsBlocks());
+        blocks.push(this.renderMessageBlock());
+        blocks.push(this.renderDividerBlock());
+        blocks.push(...this.renderOptionsBlocks());
 
         return blocks;
     }
 
-    private buildMessageBlock() : SectionBlock {
+    private renderMessageBlock() : SectionBlock {
         return {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": this.message
+            type: "section",
+            text: {
+                type: "mrkdwn",
+                text: this.message
             }
         } as SectionBlock;
     }
 
-    private buildDividerBlock() : DividerBlock {
+    private renderDividerBlock() : DividerBlock {
         return {
-            "type": "divider"
+            type: "divider"
         } as DividerBlock;
     }
 
-    private buildOptionsBlocks() : Array<Block> {
+    private renderOptionsBlocks() : Array<Block> {
         const blocks : Array<Block> = [];
 
         this.options.forEach(option => {
-            const newBlocks: Array<Block> = this.buildOptionBlocks(option);
+            const newBlocks: Array<Block> = option.renderVote();
             blocks.push(...newBlocks);
         });
 
         return blocks;
-    }
-
-    private buildOptionBlocks(option: PollOption) : Array<Block> {       
-        const restaurantBlock : SectionBlock = {
-            "type": "section",
-            "block_id": option.name,
-            "text": {
-                "type": "mrkdwn",
-                "text": `*${option.name}*\n${option.description}.`
-            },
-            "accessory": {
-                "type": "button",                   
-                "text": {
-                    "type": "plain_text",
-                    "emoji": true,
-                    "text": "Vote"
-                },
-                "action_id": "vote_button"
-            }
-        }
-
-        if (option.votes.length > 0) {
-            const votesBlock : ContextBlock = {
-                type: "context",
-                elements: []
-            }
-
-            option.votes.forEach((vote) => {
-                votesBlock.elements.push({
-                    type: 'image',
-                    image_url: vote.image,
-                    alt_text: vote.name
-                })
-            });
-
-            return [restaurantBlock, votesBlock];
-        }
-
-        return [restaurantBlock];    
-
-        // {
-        //     "type": "image",
-        //     "image_url": "https://api.slack.com/img/blocks/bkb_template_images/profile_1.png",
-        //     "alt_text": "Michael Scott"
-        // },
-        // {
-        //     "type": "image",
-        //     "image_url": "https://api.slack.com/img/blocks/bkb_template_images/profile_2.png",
-        //     "alt_text": "Dwight Schrute"
-        // },
-        // {
-        //     "type": "image",
-        //     "image_url": "https://api.slack.com/img/blocks/bkb_template_images/profile_3.png",
-        //     "alt_text": "Pam Beasely"
-        // },
-        // {
-        //     "type": "plain_text",
-        //     "emoji": true,
-        //     "text": "3 votes"
-        // }
     }
 }
