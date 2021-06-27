@@ -1,7 +1,6 @@
 import { PollSession } from "../models/PollSession";
 import * as faker from "faker";
 import { PollOption } from "../models/PollOption";
-import { GoogleMapsClient } from "@google/maps";
 import { PollOptionFactory } from "./PollOptionFactory";
 
 

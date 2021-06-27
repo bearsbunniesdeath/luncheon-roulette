@@ -1,68 +1,41 @@
 import "reflect-metadata";
 
-import { App, AuthorizeResult, ExpressReceiver } from '@slack/bolt';
+import { App } from '@slack/bolt';
 import { BlockButtonAction, ButtonAction, AppMentionEvent, Context } from '@slack/bolt/dist/types'
 import { PollSession } from './models/PollSession';
-import { PollSessionFactory, MockPollSessionFactory, LivePollSessionFactory } from './helpers/PollSessionFactory';
+import { PollSessionFactory, LivePollSessionFactory } from './helpers/PollSessionFactory';
 import { LivePollOptionFactory } from './helpers/PollOptionFactory';
 
 import { Firestore } from '@google-cloud/firestore';
-import { createClient } from '@google/maps'
 
 import { classToPlain, plainToClass } from 'class-transformer';
 
 import stringArgv from 'string-argv';
 import commandLineArgs = require('command-line-args');
 import { KnownBlock, Block } from "@slack/types";
+import { Client } from "@googlemaps/google-maps-services-js";
 
 const db = new Firestore({
     projectId: 'luncheon-roulette'
 });
 
-const mapClient = createClient({
-    key: process.env.MAPS_API_KEY,
-    Promise: Promise
-});
+const mapsClient = new Client({})
 
 //TODO: Use DI
-const sessionFactory : PollSessionFactory = new LivePollSessionFactory(new LivePollOptionFactory(mapClient));
-
-const expressReceiver = new ExpressReceiver({
-    signingSecret: process.env.LUNCHEON_ROULETTE_SIGNING_SECRET
-});
-
-const expressApp = expressReceiver.app;
-
-const authorizeFn = async({teamId}) : Promise<AuthorizeResult> => {
-    const team = await db.collection('slackauth').where('teamId', '==', teamId).limit(1).get();
-
-    const teamData = team.docs[0].data();
-
-    return {
-            botId: 'thisneedstobesomethingsoitshappy',
-            botUserId: teamData.botUserId,
-            botToken: teamData.botToken,
-            userToken: teamData.userToken
-    } as AuthorizeResult
-}
+const sessionFactory : PollSessionFactory = new LivePollSessionFactory(new LivePollOptionFactory(mapsClient));
 
 const app = new App(
     {
-        authorize: authorizeFn,
-        receiver: expressReceiver
+        clientId: process.env.SLACK_CLIENT_ID,
+        clientSecret: process.env.SLACK_CLIENT_SECRET,
+        token: process.env.SLACK_BOT_TOKEN,
+        signingSecret: process.env.SLACK_SIGNING_SECRET,
+        stateSecret: 'luncheon-bot-super-secret',
+        scopes: ['app_mentions:read', 'chat:read', 'chat:write']
     }
 );
 
-let handlingTs = new Set<string>();
-
 app.event("app_mention", async ({payload, context}) => {  
-    // Prevent handling an event more than once
-    if (handlingTs.has(payload.event_ts)) {
-        return;
-    }
-
-    handlingTs.add(payload.event_ts);
-
     // Parse the verb first
     const text: string = payload.text.split(`<@${context.botUserId}>`).join('');
     let argv: string[] = stringArgv(text);
@@ -93,7 +66,7 @@ app.event("app_mention", async ({payload, context}) => {
 });
 
 app.action("vote_button", async ({ack, action, body, context}) => {
-    ack();
+    await ack();
 
     const button: BlockButtonAction = body as BlockButtonAction;
     const buttonAction: ButtonAction = action as ButtonAction;
@@ -152,7 +125,7 @@ app.action("vote_button", async ({ack, action, body, context}) => {
 });
 
 app.action("add_button", async ({ack, respond, action, body, context}) => {
-    ack();   
+    await ack();   
     const button: BlockButtonAction = body as BlockButtonAction;
     const buttonAction: ButtonAction = action as ButtonAction;
    
@@ -182,15 +155,14 @@ app.action("add_button", async ({ack, respond, action, body, context}) => {
         });
         
         //Post the added place to everybody
-        const place = await mapClient.place({
-            placeid: placeToAdd
-        }).asPromise(); 
-        postMessage(`Added ${place.json.result.name} to the pool.`, button.channel.id, context);        
+        const place = await mapsClient.placeDetails({
+            params: {
+                place_id: placeToAdd,
+                key: process.env.MAPS_API_KEY
+            }
+        }); 
+        postMessage(`Added ${place.data.result.name} to the pool.`, button.channel.id, context);        
     }
-});
-
-app.error((error) => {
-    console.error(error);
 });
 
 async function postMessage(message: string, channel: string, context: Context, blocks?: (KnownBlock | Block)[]): Promise<any> {
@@ -240,14 +212,12 @@ async function handleSpin(args: commandLineArgs.CommandLineOptions, payload: App
     if (messageResult.ok){
         const docRef = db.collection('pollsessions').doc(messageResult.ts);
         docRef.set(classToPlain(session));
-
-        handlingTs.delete(payload.event_ts);
     }
 }
 
 async function handleAdd(args: commandLineArgs.CommandLineOptions, payload: AppMentionEvent, context: Context) {
-    const optionFactory = new LivePollOptionFactory(mapClient);
-    const options = await optionFactory.buildFromQuery(args.location, 3);
+    const optionFactory = new LivePollOptionFactory(mapsClient);
+    const options = await optionFactory.build(3, args.location);
 
     const blocks: Block[] = [].concat.apply([], options.map(o => {
         return o.renderAdd()
@@ -256,47 +226,8 @@ async function handleAdd(args: commandLineArgs.CommandLineOptions, payload: AppM
     postEphemeral(payload.user, 'Select a location to add', payload.channel, context, blocks);
 }
 
-// OAuth workflow to install the app //////////////////////////
-
-expressApp.get('/', (req, res) => {
-    res.send('<h1>Luncheon Roulette</h1><a href="https://slack.com/oauth/authorize?client_id=76198394647.628689207987&scope=bot,chat:write:bot,users.profile:read"><img alt="Add to Slack" height="40" width="139" src="https://platform.slack-edge.com/img/add_to_slack.png" srcset="https://platform.slack-edge.com/img/add_to_slack.png 1x, https://platform.slack-edge.com/img/add_to_slack@2x.png 2x"></a>');
-});
-
-expressApp.get('/slack/auth/result', (req, res) => {
-    if (req.query.success === 'true') {
-        res.send('<h1>Success! Thanks you for installing Luncheon Roulette!</h1>');
-    } else {
-        res.send('<h1>Failure! Something when wrong when trying to install Luncheon Roulette!</h1>');
-    }
-});
-
-expressApp.get('/slack/auth/redirect', async (req, res) => {
-    try {
-        const result = await app.client.oauth.access({
-            code: req.query.code,
-            client_id: process.env.LUNCHEON_ROULETTE_CLIENT_ID,
-            client_secret: process.env.LUNCHEON_ROULETTE_CLIENT_SECRET
-        });
-    
-        if (result.ok) {
-            await db.collection('slackauth').add({
-                teamId: result.team_id,
-                botUserId: (result as any).bot.bot_user_id,
-                botToken: (result as any).bot.bot_access_token,
-                userToken: result.access_token
-            });
-    
-            return res.redirect('/slack/auth/result?&success=true');
-        }
-    } catch (error) {
-        res.redirect('/slack/auth/result?&success=false');
-    }
-});
-
-///////////////////////////////////////////////////////////////
-
 (async () => {
     // Start your app 
-    await app.start(process.env.PORT || 3000);
+    await app.start(Number(process.env.PORT) || 3000);
     console.log('⚡️ Bolt app is running!');
 })();

@@ -2,6 +2,8 @@
     "compilerOptions": {
         "target": "es6",
         "module": "commonjs",
+        "moduleResolution": "node",
+        "esModuleInterop": true,
         "outDir": "dist",
         "sourceMap": true,
         "experimentalDecorators": true

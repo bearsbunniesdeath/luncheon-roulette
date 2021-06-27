@@ -1,42 +1,48 @@
 import { PollOption } from "../models/PollOption";
-import { GoogleMapsClient, PlaceSearchResult } from "@google/maps";
+import { Client, Place, Status } from "@googlemaps/google-maps-services-js";
 
 export class LivePollOptionFactory implements PollOptionFactory {
     
-    private placesProvider: GoogleMapsClient;
+    private placesProvider: Client;
 
-    constructor(placesProvider: GoogleMapsClient) {
+    constructor(placesProvider: Client) {
         this.placesProvider = placesProvider;
     }
 
-    async build(numberOfOptions?: number): Promise<PollOption[]> {
+    async build(numberOfOptions?: number, keyword?: string): Promise<PollOption[]> {
         const options: PollOption[] = [];
         try {    
-            const placesResponse = await this.placesProvider.places({
-                query: undefined,
-                opennow: true,
-                location: [51.083986, -114.130609],  //VMG office,
-                radius: 4000,
-                type: 'restaurant'
-            }).asPromise();
+            const placesResponse = await this.placesProvider.placesNearby({
+                params: {
+                    keyword: keyword,
+                    opennow: true,
+                    location: [51.083986, -114.130609],  //VMG office,
+                    radius: 4000,
+                    type: 'restaurant',
+                    key: process.env.MAPS_API_KEY
+                }
+            });
             
-            if (placesResponse.status === 200 && placesResponse.json.status === 'OK') {
-                let places = [];
+            if (placesResponse.status === 200 && placesResponse.data.status === Status.OK) {
+                let places: Place[] = [];
 
-                places.push(...placesResponse.json.results);
+                places.push(...placesResponse.data.results);
                 
-                if (placesResponse.json.next_page_token) {
+                if (placesResponse.data.next_page_token) {
 
                     //Need to sleep for a couple of seconds because the page token is not ready...
                     await new Promise(resolve => setTimeout(resolve, 2000));
 
-                    const morePlacesResponse = await this.placesProvider.places({
-                        query: undefined,
-                        pagetoken: placesResponse.json.next_page_token                   
-                    }).asPromise();
+                    const morePlacesResponse = await this.placesProvider.placesNearby({
+                        params: {
+                            location: [51.083986, -114.130609],  //VMG office,
+                            pagetoken: placesResponse.data.next_page_token,
+                            key: process.env.MAPS_API_KEY
+                        }
+                    });
     
-                    if (morePlacesResponse.status === 200 && morePlacesResponse.json.status === 'OK') {
-                        places.push(...morePlacesResponse.json.results);
+                    if (morePlacesResponse.status === 200 && morePlacesResponse.data.status === Status.OK) {
+                        places.push(...morePlacesResponse.data.results);
                     }
                 }               
 
@@ -59,59 +65,11 @@ export class LivePollOptionFactory implements PollOptionFactory {
 
         return options;
     }
-    
-    async buildFromQuery(query: string, numberOfOptions?: number) : Promise<PollOption[]> {       
-        try { 
-            const places: PlaceSearchResult[] = await this.getPlaces(query);
-
-            return places.slice(0, numberOfOptions)
-                          .map(p => {                          
-                              return new PollOption(p.place_id, p.name, p.formatted_address);
-                          });
-        } catch (error) {
-            console.error(error);
-        }       
-    }
-
-    private async getPlaces(query?: string) : Promise<PlaceSearchResult[]> {
-        const placesResponse = await this.placesProvider.places({
-            query,
-            opennow: true,
-            location: [51.083986, -114.130609],  //VMG office,
-            radius: 4000,
-            type: 'restaurant'
-        }).asPromise();
-
-        if (placesResponse.status === 200 && placesResponse.json.status === 'OK') {
-            let places : PlaceSearchResult[] = [];
-
-            places.push(...placesResponse.json.results);
-
-            if (placesResponse.json.next_page_token) {
-
-                //Need to sleep for a couple of seconds because the page token is not ready...
-                await new Promise(resolve => setTimeout(resolve, 2000));
-
-                const morePlacesResponse = await this.placesProvider.places({
-                    query: undefined,
-                    pagetoken: placesResponse.json.next_page_token                   
-                }).asPromise();
-
-                if (morePlacesResponse.status === 200 && morePlacesResponse.json.status === 'OK') {
-                    places.push(...morePlacesResponse.json.results);
-                }
-            }         
-            return places;
-        }      
-        return []
-    }
 
 }
 
 export interface PollOptionFactory {
 
-    build(numberOfOptions?: number) : Promise<PollOption[]>
-
-    buildFromQuery(query: string, numberOfOptions?: number) : Promise<PollOption[]>
+    build(numberOfOptions?: number, keyword?: string) : Promise<PollOption[]>
 
 }
